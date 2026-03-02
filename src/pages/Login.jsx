@@ -37,7 +37,8 @@ const Login = () => {
     
     try {
       // Direct axios call to backend
-      const response = await axios.post("http://localhost:5000/api/employees/login", {
+      const API_URL = import.meta.env.VITE_API_URL || "https://unixa-admin-panel-backend.onrender.com/api";
+      const response = await axios.post(`${API_URL}/employees/login`, {
         email: formData.email,
         password: formData.password
       });
