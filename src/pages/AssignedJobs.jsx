@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Box,
   Flex,
@@ -64,7 +64,8 @@ import {
   FaSave,
   FaAngleLeft,
   FaAngleRight,
-  FaCamera
+  FaCamera,
+  FaSync
 } from "react-icons/fa";
 import api from '../services/api';
 
@@ -73,6 +74,9 @@ const AssignedJobs = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0 });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const abortControllerRef = useRef(null);
 
   const { isOpen: isViewOpen, onOpen: onViewOpen, onClose: onViewClose } = useDisclosure();
   const { isOpen: isCompleteOpen, onOpen: onCompleteOpen, onClose: onCompleteClose } = useDisclosure();
@@ -87,87 +91,229 @@ const AssignedJobs = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
 
-  useEffect(() => {
-    fetchAssignedJobs();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchAssignedJobs, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  const fetchAssignedJobs = useCallback(async (isManualRefresh = false) => {
+    // Prevent multiple simultaneous requests
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
 
-  const fetchAssignedJobs = async () => {
     try {
-      setLoading(true);
-
-      let employeeName = null;
-      const userStr = localStorage.getItem('user');
-
-      if (userStr) {
-        try {
-          const parsed = JSON.parse(userStr);
-          employeeName = parsed.name || parsed.employeeName || parsed.firstName;
-          console.log('Employee Name:', employeeName);
-        } catch (e) {
-          console.error('Error parsing user data:', e);
-        }
+      if (isManualRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
       }
 
-      if (!employeeName) {
-        console.error('No employee name found');
+      // Get employee name from localStorage
+      const userStr = localStorage.getItem('user');
+      if (!userStr) {
         setJobs([]);
-        setLoading(false);
+        setStats({ total: 0, completed: 0, pending: 0 });
         return;
       }
 
-      // Fetch from assigned tickets instead of service requests
-      console.log('Fetching tickets for:', employeeName);
-      const response = await api.get(`/assigned-tickets/employee/${employeeName}`);
-      console.log('Assigned Tickets Response:', response.data);
-      const assignedTickets = response.data || [];
+      const parsed = JSON.parse(userStr);
+      const employeeName = parsed.name || parsed.employeeName || parsed.firstName;
 
-      const formattedJobs = assignedTickets.map((ticket) => {
-        const userData = ticket.userId || {};
-        const amcData = ticket.amcId || {};
+      console.log('[DEBUG] Employee name from localStorage:', employeeName);
+      console.log('[DEBUG] Full user object:', parsed);
 
-        return {
-          id: ticket._id,
-          ticketNumber: ticket._id.slice(-8).toUpperCase(),
-          title: ticket.title,
-          description: ticket.description,
-          assignedBy: ticket.assignedBy,
-          assignedTo: ticket.assignedTo,
-          priority: ticket.priority,
-          status: ticket.status,
-          dueDate: new Date(ticket.dueDate || ticket.createdAt).toLocaleDateString('en-IN'),
-          createdAt: new Date(ticket.createdAt).toLocaleDateString('en-IN'),
-          time: new Date(ticket.dueDate || ticket.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-          customerName: ticket.customerName || `${userData.firstName || ''} ${userData.lastName || ''}`.trim(),
-          customerPhone: ticket.customerPhone || userData.phone || 'N/A',
-          customerEmail: ticket.customerEmail || userData.email || 'N/A',
-          address: ticket.address || (userData.addresses && userData.addresses.length > 0
-            ? `${userData.addresses[0].addressLine1}, ${userData.addresses[0].city}`
-            : 'N/A'),
-          notes: ticket.notes || 'No notes',
-          amcInfo: amcData.amcPlanName ? {
-            planName: amcData.amcPlanName,
-            servicesTotal: amcData.servicesTotal,
-            servicesUsed: amcData.servicesUsed,
-            servicesRemaining: amcData.servicesTotal - amcData.servicesUsed
-          } : null,
-          completionPhoto: ticket.completionPhoto
+      if (!employeeName) {
+        console.error('[ERROR] No employee name found in localStorage');
+        setJobs([]);
+        setStats({ total: 0, completed: 0, pending: 0 });
+        return;
+      }
+
+      // Validate employee name to prevent SSRF
+      if (typeof employeeName !== 'string' || employeeName.length > 100 || /[<>"'&]/.test(employeeName)) {
+        console.error('Invalid employee name format');
+        setJobs([]);
+        setStats({ total: 0, completed: 0, pending: 0 });
+        return;
+      }
+
+      // Encode employee name for URL
+      const encodedEmployeeName = encodeURIComponent(employeeName);
+      
+      console.log('[DEBUG] Making API call for employee:', employeeName);
+      console.log('[DEBUG] Encoded name:', encodedEmployeeName);
+      console.log('[DEBUG] Full API URL:', `/assigned-tickets/employee/${encodedEmployeeName}`);
+
+      // Create abort controller for request cancellation
+      abortControllerRef.current = new AbortController();
+      const timeoutId = setTimeout(() => {
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+      }, 30000); // 30 second timeout for slow connections
+
+      try {
+        const response = await api.get(`/assigned-tickets/employee/${encodedEmployeeName}`, {
+          signal: abortControllerRef.current.signal
+        });
+        clearTimeout(timeoutId);
+
+        const assignedTickets = response.data || [];
+        console.log(`[DEBUG] ========== API RESPONSE START ==========`);
+        console.log(`[DEBUG] API Response status:`, response.status);
+        console.log(`[DEBUG] API Response headers:`, response.headers);
+        console.log(`[DEBUG] Raw response.data type:`, typeof response.data);
+        console.log(`[DEBUG] Raw response.data:`, response.data);
+        console.log(`[DEBUG] Received ${assignedTickets.length} raw tickets for "${employeeName}"`);
+        console.log(`[DEBUG] API URL called:`, `/assigned-tickets/employee/${encodedEmployeeName}`);
+        console.log(`[DEBUG] ========== API RESPONSE END ==========`);
+        if (assignedTickets.length > 0) {
+          console.log('[DEBUG] First ticket sample:', assignedTickets[0]);
+        } else {
+          console.warn('[WARNING] ⚠️ No tickets returned from API - Array is empty!');
+        }
+        const jobs = [];
+        let totalCount = 0;
+        let completedCount = 0;
+        let pendingCount = 0;
+
+        assignedTickets.forEach((ticket) => {
+          totalCount++;
+
+          if (ticket.status === 'Completed') {
+            completedCount++;
+            return; // Skip completed jobs
+          }
+
+          if (ticket.status === 'Pending') pendingCount++;
+
+          // Minimal data processing for speed
+          jobs.push({
+            id: ticket._id,
+            ticketNumber: ticket._id.slice(-8).toUpperCase(),
+            title: ticket.title || 'Service Task',
+            description: ticket.description || '',
+            assignedBy: ticket.assignedBy || 'Admin',
+            assignedTo: ticket.assignedTo || employeeName,
+            priority: ticket.priority || 'Medium',
+            status: ticket.status || 'Pending',
+            dueDate: ticket.dueDate ? new Date(ticket.dueDate).toLocaleDateString('en-IN') : new Date().toLocaleDateString('en-IN'),
+            time: ticket.dueDate ? new Date(ticket.dueDate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '09:00',
+            customerName: ticket.customerName || 'Customer',
+            customerPhone: ticket.customerPhone || 'N/A',
+            customerEmail: ticket.customerEmail || 'N/A',
+            address: ticket.address || 'N/A',
+            notes: ticket.notes || 'No notes',
+            amcInfo: null // AMC info removed for speed
+          });
+        });
+
+        // Update state immediately
+        setJobs(jobs);
+        const newStats = {
+          total: totalCount,
+          completed: completedCount,
+          pending: pendingCount
         };
+        setStats(newStats);
+        
+        console.log('[DEBUG] ✅ State updated successfully!');
+        console.log('[DEBUG] Jobs array length:', jobs.length);
+        console.log('[DEBUG] Stats:', newStats);
+        console.log('[DEBUG] Sample job:', jobs[0]);
+
+        // Cache successful data
+        try {
+          sessionStorage.setItem('cachedJobs', JSON.stringify({
+            jobs,
+            stats: newStats,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.warn('Failed to cache job data');
+        }
+
+      } catch (requestError) {
+        clearTimeout(timeoutId);
+        throw requestError;
+      }
+
+    } catch (error) {
+      if (error.name === 'AbortError' || error.message === 'canceled') {
+        return; // Silent return for intentional cancellations
+      }
+      console.error('[ERROR] Error fetching jobs:', error.message);
+      console.error('[ERROR] Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url
       });
 
-      console.log('Formatted Jobs:', formattedJobs);
-      setJobs(formattedJobs);
-    } catch (error) {
-      console.error('Error fetching assigned jobs:', error);
-      console.error('Error details:', error.response?.data);
-      toast({ title: 'Failed to load jobs', status: 'error', duration: 3000 });
+      // Handle different error types
+      if (error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK') {
+        console.warn('[WARNING] Network/timeout error - using cached data if available');
+      }
+
+      // Try to use cached data or set empty state
+      const cachedJobs = sessionStorage.getItem('cachedJobs');
+      if (cachedJobs && !isManualRefresh) {
+        try {
+          const parsed = JSON.parse(cachedJobs);
+          setJobs(parsed.jobs || []);
+          setStats(parsed.stats || { total: 0, completed: 0, pending: 0 });
+          console.log('Using cached job data');
+          return;
+        } catch (e) {
+          console.warn('Failed to parse cached data');
+        }
+      }
+
       setJobs([]);
+      setStats({ total: 0, completed: 0, pending: 0 });
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
+      abortControllerRef.current = null;
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+
+    // Check for cached data first
+    const cachedData = sessionStorage.getItem('cachedJobs');
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        // Use cache if it's less than 5 minutes old for immediate UI response
+        const isRecent = Date.now() - parsed.timestamp < 300000;
+        if (isRecent && parsed.jobs) {
+          setJobs(parsed.jobs);
+          setStats(parsed.stats || { total: 0, completed: 0, pending: 0 });
+          setLoading(false);
+          // Still fetch fresh data in background
+          setTimeout(() => {
+            if (isMounted) fetchAssignedJobs(false);
+          }, 500);
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to parse cached data');
+      }
+    }
+
+    fetchAssignedJobs(false);
+
+    const interval = setInterval(() => {
+      if (isMounted) fetchAssignedJobs(false);
+    }, 60000); // Check for new jobs every minute
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchAssignedJobs]);
 
   const getPriorityColor = (priority) => {
     switch (priority) {
@@ -195,6 +341,7 @@ const AssignedJobs = () => {
         status: 'In Progress'
       });
 
+      // Immediately update local state
       const updatedJobs = jobs.map(j =>
         j.id === job.id ? { ...j, status: 'In Progress' } : j
       );
@@ -250,8 +397,16 @@ const AssignedJobs = () => {
             completionPhoto: reader.result
           });
 
+          // Remove completed job from list immediately
           const updatedJobs = jobs.filter(j => j.id !== selectedJob.id);
           setJobs(updatedJobs);
+
+          // Update stats
+          setStats(prev => ({
+            ...prev,
+            completed: prev.completed + 1,
+            pending: prev.pending - (selectedJob.status === 'Pending' ? 1 : 0)
+          }));
 
           toast({
             title: "Job Completed Successfully!",
@@ -263,7 +418,11 @@ const AssignedJobs = () => {
           });
 
           onCompleteClose();
-          fetchAssignedJobs();
+
+          // Refresh data after 2 seconds to sync with server
+          setTimeout(() => {
+            fetchAssignedJobs(false);
+          }, 2000);
         } catch (error) {
           console.error('Error completing job:', error);
           toast({ title: "Failed to complete job", status: "error", duration: 3000 });
@@ -280,6 +439,28 @@ const AssignedJobs = () => {
 
   return (
     <VStack spacing={8} align="stretch" w="full">
+      {/* Stats Cards */}
+      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6}>
+        <Box bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="slate.100" boxShadow="sm">
+          <VStack align="start" spacing={1}>
+            <Text fontSize="xs" fontWeight="bold" color="slate.400" textTransform="uppercase">Total Jobs</Text>
+            <Heading size="2xl" color="slate.800">{stats.total}</Heading>
+          </VStack>
+        </Box>
+        <Box bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="green.100" boxShadow="sm">
+          <VStack align="start" spacing={1}>
+            <Text fontSize="xs" fontWeight="bold" color="green.500" textTransform="uppercase">Completed</Text>
+            <Heading size="2xl" color="green.600">{stats.completed}</Heading>
+          </VStack>
+        </Box>
+        <Box bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="orange.100" boxShadow="sm">
+          <VStack align="start" spacing={1}>
+            <Text fontSize="xs" fontWeight="bold" color="orange.500" textTransform="uppercase">Pending</Text>
+            <Heading size="2xl" color="orange.600">{stats.pending}</Heading>
+          </VStack>
+        </Box>
+      </SimpleGrid>
+
       <Flex direction={{ base: "column", md: "row" }} justify="space-between" align={{ base: "start", md: "center" }} gap={4}>
         <VStack align="start" spacing={1}>
           <Heading size="md" fontWeight="black" color="slate.800">Your Assigned Jobs</Heading>
@@ -305,8 +486,22 @@ const AssignedJobs = () => {
             borderColor="slate.100" boxShadow="sm"
           >
             <Icon as={FaCalendarAlt} color="brand.500" />
-            <Text fontSize="sm" fontWeight="black" color="slate.700">Today, 24 Oct</Text>
+            <Text fontSize="sm" fontWeight="black" color="slate.700">Today, {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</Text>
           </HStack>
+
+          {/* Refresh Button */}
+          <IconButton
+            aria-label="Refresh Jobs"
+            icon={<FaSync />}
+            size="md"
+            variant="outline"
+            borderRadius="xl"
+            borderColor="slate.200"
+            color="slate.400"
+            onClick={() => fetchAssignedJobs(true)}
+            isLoading={loading || isRefreshing}
+            _hover={{ bg: "slate.50", color: "brand.500", borderColor: "brand.200" }}
+          />
 
           {/* View Toggle */}
           <HStack bg="white" spacing={1} p={1} borderRadius="xl" border="1px solid" borderColor="slate.100">
@@ -347,13 +542,17 @@ const AssignedJobs = () => {
             <VStack>
               <Box className="animate-spin" w={12} h={12} border="4px solid" borderColor="blue.100" borderTopColor="blue.500" rounded="full" />
               <Text fontSize="sm" fontWeight="bold" color="slate.400">Loading jobs...</Text>
+              <Text fontSize="xs" color="slate.300">If this takes too long, check your connection</Text>
             </VStack>
           </Center>
         ) : jobs.length === 0 ? (
           <Center py={20}>
             <VStack>
-              <Text fontSize="lg" fontWeight="bold" color="slate.400">No jobs assigned yet</Text>
+              <Text fontSize="lg" fontWeight="bold" color="slate.400">No active jobs assigned</Text>
               <Text fontSize="sm" color="slate.400">Check back later for new assignments</Text>
+              <Button size="sm" colorScheme="blue" variant="outline" onClick={() => fetchAssignedJobs(true)} mt={3}>
+                Refresh Jobs
+              </Button>
             </VStack>
           </Center>
         ) : (
@@ -398,9 +597,23 @@ const AssignedJobs = () => {
                       <Center w={10} h={10} bg="blue.50" color="blue.500" borderRadius="xl" shrink={0}>
                         <Icon as={FaMapMarkerAlt} />
                       </Center>
-                      <VStack align="start" spacing={0}>
+                      <VStack align="start" spacing={0} flex={1}>
                         <Text fontSize="xs" fontWeight="black" color="slate.300" textTransform="uppercase">Location</Text>
                         <Text fontSize="sm" fontWeight="bold" color="slate.700" noOfLines={2}>{job.address}</Text>
+                        {job.address && job.address !== 'N/A' && (
+                          <Button
+                            as="a"
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
+                            target="_blank"
+                            size="xs"
+                            colorScheme="blue"
+                            variant="link"
+                            mt={1}
+                            leftIcon={<Icon as={FaRoute} />}
+                          >
+                            Open in Maps
+                          </Button>
+                        )}
                       </VStack>
                     </HStack>
 
@@ -557,13 +770,17 @@ const AssignedJobs = () => {
               <VStack>
                 <Box className="animate-spin" w={12} h={12} border="4px solid" borderColor="blue.100" borderTopColor="blue.500" rounded="full" />
                 <Text fontSize="sm" fontWeight="bold" color="slate.400">Loading jobs...</Text>
+                <Text fontSize="xs" color="slate.300">If this takes too long, check your connection</Text>
               </VStack>
             </Center>
           ) : jobs.length === 0 ? (
             <Center py={20}>
               <VStack>
-                <Text fontSize="lg" fontWeight="bold" color="slate.400">No jobs assigned yet</Text>
+                <Text fontSize="lg" fontWeight="bold" color="slate.400">No active jobs assigned</Text>
                 <Text fontSize="sm" color="slate.400">Check back later for new assignments</Text>
+                <Button size="sm" colorScheme="blue" variant="outline" onClick={() => fetchAssignedJobs(true)} mt={3}>
+                  Refresh Jobs
+                </Button>
               </VStack>
             </Center>
           ) : (
@@ -594,6 +811,21 @@ const AssignedJobs = () => {
                           <VStack align="start" spacing={0}>
                             <Text fontWeight="700" color="slate.800" fontSize="sm">{job.customerName}</Text>
                             <Text fontSize="xs" color="slate.500" noOfLines={1} maxW="180px">{job.address}</Text>
+                            {job.address && job.address !== 'N/A' && (
+                              <Button
+                                as="a"
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`}
+                                target="_blank"
+                                size="xs"
+                                colorScheme="blue"
+                                variant="link"
+                                mt={1}
+                                fontSize="10px"
+                                leftIcon={<Icon as={FaRoute} fontSize="10px" />}
+                              >
+                                View Map
+                              </Button>
+                            )}
                           </VStack>
                         </Td>
                         <Td py={4} borderBottom="1px solid" borderColor="slate.100">
@@ -754,8 +986,39 @@ const AssignedJobs = () => {
                   <Text fontWeight="bold" color="slate.700" fontSize="sm">{selectedJob?.customerEmail}</Text>
                 </Box>
                 <Box>
+                  <Text fontSize="xs" fontWeight="black" color="slate.400" mb={1} textTransform="uppercase">Phone</Text>
+                  <HStack>
+                    <Text fontWeight="bold" color="slate.700" fontSize="sm">{selectedJob?.customerPhone}</Text>
+                    {selectedJob?.customerPhone && selectedJob.customerPhone !== 'N/A' && (
+                      <Button
+                        as="a"
+                        href={`tel:${selectedJob.customerPhone}`}
+                        size="xs"
+                        colorScheme="green"
+                        variant="solid"
+                        leftIcon={<Icon as={FaPhone} />}
+                      >
+                        Call
+                      </Button>
+                    )}
+                  </HStack>
+                </Box>
+                <Box gridColumn="span 2">
                   <Text fontSize="xs" fontWeight="black" color="slate.400" mb={1} textTransform="uppercase">Location</Text>
-                  <Text fontWeight="bold" color="slate.700" fontSize="sm" noOfLines={2}>{selectedJob?.address}</Text>
+                  <Text fontWeight="bold" color="slate.700" fontSize="sm" mb={2}>{selectedJob?.address}</Text>
+                  {selectedJob?.address && selectedJob.address !== 'N/A' && (
+                    <Button
+                      as="a"
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedJob.address)}`}
+                      target="_blank"
+                      size="sm"
+                      colorScheme="blue"
+                      variant="outline"
+                      leftIcon={<Icon as={FaRoute} />}
+                    >
+                      Open in Google Maps
+                    </Button>
+                  )}
                 </Box>
                 <Box>
                   <Text fontSize="xs" fontWeight="black" color="slate.400" mb={1} textTransform="uppercase">Scheduled</Text>

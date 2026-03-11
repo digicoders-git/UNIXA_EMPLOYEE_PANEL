@@ -119,7 +119,15 @@ const Dashboard = () => {
     try {
       setLoading(true);
       
-      const response = await api.get('/employee-dashboard/stats');
+      // Get employee name from localStorage
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      const employeeName = user?.name || user?.employeeName || user?.firstName;
+      
+      // Pass employee name as query param
+      const response = await api.get('/employee-dashboard/stats', {
+        params: { employeeName }
+      });
       const { stats: dashboardStats, chart, recentTasks: tasks } = response.data;
       
       setStats({

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { 
   Box, 
   Flex, 
@@ -67,6 +67,7 @@ import {
   FaAngleLeft,
   FaAngleRight
 } from "react-icons/fa";
+import api from '../services/api';
 
 const InputField = ({ label, icon, ...props }) => (
   <FormControl>
@@ -98,6 +99,7 @@ const NewLead = () => {
 
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const [formData, setFormData] = useState({
     id: null,
@@ -119,6 +121,39 @@ const NewLead = () => {
   
   const toast = useToast();
   const cancelRef = useRef();
+
+  useEffect(() => {
+    fetchLeads();
+  }, []);
+
+  const fetchLeads = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/leads');
+      console.log('Leads Response:', response.data);
+      const leads = response.data.leads || response.data || [];
+      const data = Array.isArray(leads) ? leads : [];
+      const formattedLeads = data.map((lead) => ({
+        id: lead._id,
+        name: lead.name,
+        phone: lead.phone,
+        email: lead.email || 'N/A',
+        product: lead.productInterest || 'General Inquiry',
+        status: lead.leadStatus || 'Warm',
+        location: lead.address || 'Unknown',
+        date: new Date(lead.createdAt).toISOString().split('T')[0],
+        notes: lead.notes || '',
+        followUpDate: lead.followUpDate || ''
+      }));
+      setLeads(formattedLeads);
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      setLeads([]);
+      toast({ title: 'Failed to load leads', status: 'error', duration: 3000 });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Pagination Logic
   const indexOfLastItem = currentPage * itemsPerPage;
@@ -172,50 +207,63 @@ const NewLead = () => {
       onDeleteOpen();
   };
 
-  const handleDeleteConfirm = () => {
-      const filtered = leads.filter(l => l.id !== selectedLead.id);
-      setLeads(filtered);
-      if ((currentPage - 1) * itemsPerPage >= filtered.length && currentPage > 1) {
-          setCurrentPage(currentPage - 1);
-      }
+  const handleDeleteConfirm = async () => {
+    try {
+      await api.delete(`/leads/${selectedLead.id}`);
       toast({ title: "Lead Deleted", status: "error", duration: 3000 });
+      fetchLeads();
       onDeleteClose();
+    } catch (error) {
+      console.error('Error deleting lead:', error);
+      toast({ title: "Failed to delete lead", status: "error", duration: 3000 });
+    }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (modalMode === "create") {
-        const newLead = {
-            id: leads.length + 1,
-            name: formData.customerName,
-            phone: `+91 ${formData.phone}`,
-            product: formData.productInterest || "General Inquiry",
-            status: formData.leadStatus,
-            location: formData.address || "Unknown",
-            date: new Date().toISOString().split('T')[0],
-            email: formData.email,
-            notes: formData.notes
-        };
-        setLeads([newLead, ...leads]);
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    
+    try {
+      if (modalMode === "create") {
+        const response = await api.post('/leads', {
+          name: formData.customerName,
+          phone: formData.phone,
+          email: formData.email,
+          address: formData.address,
+          productInterest: formData.productInterest,
+          source: formData.source,
+          notes: formData.notes,
+          leadStatus: formData.leadStatus,
+          followUpDate: formData.followUpDate
+        });
+        console.log('Lead created:', response.data);
         toast({ title: "Lead saved successfully.", status: "success", duration: 3000 });
-    } else {
-        const updatedLeads = leads.map(l => l.id === formData.id ? {
-            ...l,
-            name: formData.customerName,
-            phone: formData.phone.includes("+91") ? formData.phone : `+91 ${formData.phone}`,
-            product: formData.productInterest,
-            status: formData.leadStatus,
-            location: formData.address,
-            email: formData.email,
-            notes: formData.notes,
-            followUpDate: formData.followUpDate
-        } : l);
-        setLeads(updatedLeads);
+      } else {
+        const response = await api.put(`/leads/${formData.id}`, {
+          name: formData.customerName,
+          phone: formData.phone,
+          email: formData.email,
+          address: formData.address,
+          productInterest: formData.productInterest,
+          notes: formData.notes,
+          leadStatus: formData.leadStatus,
+          followUpDate: formData.followUpDate
+        });
+        console.log('Lead updated:', response.data);
         toast({ title: "Lead updated successfully.", status: "success", duration: 3000 });
+      }
+      await fetchLeads();
+      onClose();
+    } catch (error) {
+      console.error('Error saving lead:', error);
+      console.error('Error response:', error.response?.data);
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to save lead';
+      toast({ title: errorMsg, status: "error", duration: 5000 });
+    } finally {
+      if (submitButton) submitButton.disabled = false;
     }
-
-    onClose();
   };
 
 
