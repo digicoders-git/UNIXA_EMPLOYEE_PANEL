@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { 
   Box, 
   Flex, 
@@ -28,6 +28,8 @@ import {
   FormLabel,
   Input,
   useDisclosure,
+  IconButton,
+  Image,
   useToast
 } from "@chakra-ui/react";
 import { 
@@ -40,14 +42,26 @@ import {
   FaEdit,
   FaCheckCircle,
   FaSave,
-  FaTimes
+  FaTimes,
+  FaCamera,
+  FaUpload
 } from "react-icons/fa";
 import { useAuth } from "../context/AuthContext";
+import api from "../services/api";
 
 const Profile = () => {
   const { user, login } = useAuth();
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const { isOpen: isPicModalOpen, onOpen: onPicModalOpen, onClose: onPicModalClose } = useDisclosure();
   const toast = useToast();
+  const fileInputRef = useRef(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+
+  // Debug logs
+  console.log('Profile component - User object:', user);
+  console.log('Profile component - User ID:', user?.id);
 
   // Initialize form state with user data or dummy data
   const [formData, setFormData] = useState({
@@ -81,6 +95,107 @@ const Profile = () => {
     onClose();
   };
 
+  const handleFileSelect = (event) => {
+    console.log('File select triggered');
+    const file = event.target.files[0];
+    console.log('Selected file:', file);
+    
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        console.log('File too large:', file.size);
+        toast({
+          title: 'File too large',
+          description: 'Please select an image smaller than 5MB',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      if (!file.type.startsWith('image/')) {
+        console.log('Invalid file type:', file.type);
+        toast({
+          title: 'Invalid file type',
+          description: 'Please select an image file',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
+      }
+      
+      console.log('File validation passed, setting preview');
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        console.log('File reader loaded');
+        setPreviewUrl(e.target.result);
+      };
+      reader.readAsDataURL(file);
+      onPicModalOpen();
+    }
+  };
+
+  const handleUploadProfilePicture = async () => {
+    console.log('Upload function called');
+    console.log('Selected file:', selectedFile);
+    console.log('User ID:', user?.id);
+    
+    if (!selectedFile) {
+      console.log('No file selected');
+      return;
+    }
+    
+    setUploadLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('profilePicture', selectedFile);
+      
+      console.log('Making API call to:', `/employees/${user.id}/profile-picture`);
+      
+      const response = await api.put(`/employees/${user.id}/profile-picture`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      console.log('Upload response:', response.data);
+      
+      const updatedUser = { ...user, profilePicture: response.data.profilePicture };
+      login(updatedUser, localStorage.getItem('token'));
+      
+      toast({
+        title: 'Profile Picture Updated!',
+        description: 'Your profile picture has been updated successfully.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+      
+      onPicModalClose();
+      setSelectedFile(null);
+      setPreviewUrl(null);
+    } catch (error) {
+      console.error('Upload error:', error);
+      console.error('Error response:', error.response?.data);
+      toast({
+        title: 'Upload Failed',
+        description: error.response?.data?.message || 'Failed to upload profile picture',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  const handleCameraClick = () => {
+    console.log('Camera button clicked');
+    fileInputRef.current?.click();
+  };
+
   return (
     <Box maxW="5xl" mx="auto" w="full">
       <VStack spacing={0} align="stretch" borderRadius="3xl" overflow="hidden" border="1px solid" borderColor="slate.50" boxShadow="sm" bg="white">
@@ -95,7 +210,32 @@ const Profile = () => {
                     icon={<FaUserCircle fontSize="4rem" />}
                     bg="transparent"
                     color="brand.500"
-                    src={user?.avatar || ""} 
+                    src={user?.profilePicture || ""} 
+                    name={user?.name}
+                 />
+                 <input
+                   type="file"
+                   ref={fileInputRef}
+                   onChange={handleFileSelect}
+                   accept="image/*"
+                   style={{ display: 'none' }}
+                 />
+                 <IconButton
+                   icon={<FaCamera />}
+                   size="sm"
+                   colorScheme="brand"
+                   borderRadius="full"
+                   position="absolute"
+                   bottom={2}
+                   right={2}
+                   boxShadow="lg"
+                   border="3px solid white"
+                   _hover={{ transform: 'scale(1.1)' }}
+                   onClick={handleCameraClick}
+                   aria-label="Change profile picture"
+                   zIndex={10}
+                   bg="brand.500"
+                   color="white"
                  />
                  <Circle 
                     size={8} 
@@ -106,6 +246,39 @@ const Profile = () => {
                     border="4px solid white"
                  />
               </Circle>
+              
+              {/* Alternative Upload Button */}
+              <Button
+                leftIcon={<FaCamera />}
+                size="sm"
+                colorScheme="brand"
+                variant="outline"
+                borderRadius="xl"
+                onClick={handleCameraClick}
+                mt={2}
+              >
+                Change Photo
+              </Button>
+              
+              {/* Simple File Upload Section */}
+              <VStack spacing={3} mt={4}>
+                <Text fontSize="sm" fontWeight="bold" color="slate.600">Profile Picture</Text>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  style={{
+                    padding: '8px',
+                    border: '2px dashed #CBD5E0',
+                    borderRadius: '8px',
+                    width: '100%',
+                    maxWidth: '300px'
+                  }}
+                />
+                <Text fontSize="xs" color="slate.500" textAlign="center">
+                  Choose an image file (max 5MB)
+                </Text>
+              </VStack>
 
               {/* Main Details */}
               <VStack align={{ base: "center", md: "start" }} spacing={1} flex={1}>
@@ -353,6 +526,69 @@ const Profile = () => {
               </Button>
             </HStack>
           </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Profile Picture Upload Modal */}
+      <Modal isOpen={isPicModalOpen} onClose={onPicModalClose} isCentered>
+        <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
+        <ModalContent borderRadius="3xl" overflow="hidden">
+          <ModalHeader bg="brand.500" color="white" textAlign="center">
+            <Icon as={FaCamera} mr={2} />
+            Update Profile Picture
+          </ModalHeader>
+          <ModalCloseButton color="white" />
+          <ModalBody p={8}>
+            <VStack spacing={6}>
+              {previewUrl && (
+                <Box>
+                  <Image
+                    src={previewUrl}
+                    alt="Preview"
+                    boxSize="200px"
+                    objectFit="cover"
+                    borderRadius="full"
+                    border="4px solid"
+                    borderColor="brand.100"
+                    shadow="lg"
+                  />
+                </Box>
+              )}
+              
+              <Text textAlign="center" color="gray.600" fontSize="sm">
+                This will be your new profile picture. Make sure it's clear and professional.
+              </Text>
+              
+              <HStack spacing={4} w="full">
+                <Button
+                  variant="outline"
+                  colorScheme="gray"
+                  flex={1}
+                  borderRadius="xl"
+                  onClick={() => {
+                    onPicModalClose();
+                    setSelectedFile(null);
+                    setPreviewUrl(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  colorScheme="brand"
+                  flex={1}
+                  borderRadius="xl"
+                  leftIcon={<FaUpload />}
+                  isLoading={uploadLoading}
+                  loadingText="Uploading..."
+                  onClick={handleUploadProfilePicture}
+                  boxShadow="lg"
+                  _hover={{ transform: 'translateY(-1px)', boxShadow: 'xl' }}
+                >
+                  Upload
+                </Button>
+              </HStack>
+            </VStack>
+          </ModalBody>
         </ModalContent>
       </Modal>
     </Box>

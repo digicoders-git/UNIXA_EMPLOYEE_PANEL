@@ -65,7 +65,8 @@ import {
   FaAngleLeft,
   FaAngleRight,
   FaCamera,
-  FaSync
+  FaSync,
+  FaPlus
 } from "react-icons/fa";
 import api from '../services/api';
 
@@ -85,8 +86,9 @@ const AssignedJobs = () => {
 
   const [selectedJob, setSelectedJob] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [completionPhoto, setCompletionPhoto] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
+  const [completionPhotos, setCompletionPhotos] = useState([]);
+  const [completionRemark, setCompletionRemark] = useState("");
+  const [photoPreviews, setPhotoPreviews] = useState([]);
 
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -199,7 +201,7 @@ const AssignedJobs = () => {
             customerPhone: ticket.customerPhone || 'N/A',
             customerEmail: ticket.customerEmail || 'N/A',
             address: ticket.address || 'N/A',
-            notes: ticket.notes || 'No notes',
+            notes: ticket.notes || ticket.description || 'No notes',
             amcInfo: null // AMC info removed for speed
           });
         });
@@ -361,78 +363,80 @@ const AssignedJobs = () => {
     }
   };
 
-  const handleCompleteJob = async (job) => {
+  const handleCompleteJob = (job) => {
     setSelectedJob(job);
-    setCompletionPhoto(null);
-    setPhotoPreview(null);
+    setCompletionPhotos([]);
+    setPhotoPreviews([]);
+    setCompletionRemark("");
     onCompleteOpen();
   };
 
   const handlePhotoChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setCompletionPhoto(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result);
-      };
-      reader.readAsDataURL(file);
+    const files = Array.from(e.target.files);
+    if (files.length > 0) {
+      setCompletionPhotos(prev => [...prev, ...files]);
+      
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPhotoPreviews(prev => [...prev, reader.result]);
+        };
+        reader.readAsDataURL(file);
+      });
     }
   };
 
+  const removePhoto = (index) => {
+    setCompletionPhotos(prev => prev.filter((_, i) => i !== index));
+    setPhotoPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmitCompletion = async () => {
-    if (!completionPhoto) {
-      toast({ title: "Please upload a completion photo", status: "warning", duration: 3000 });
+    if (completionPhotos.length === 0) {
+      toast({ title: "Please upload at least one completion photo", status: "warning", duration: 3000 });
       return;
     }
 
     try {
       setIsSubmitting(true);
 
-      const reader = new FileReader();
-      reader.readAsDataURL(completionPhoto);
-      reader.onloadend = async () => {
-        try {
-          await api.put(`/assigned-tickets/${selectedJob.id}/complete`, {
-            completionPhoto: reader.result
-          });
+      // In a real app, you might want to upload these to S3 or similar
+      // Here we're using base64 for simplicity as the current code does
+      
+      await api.put(`/assigned-tickets/${selectedJob.id}/complete`, {
+        completionPhotos: photoPreviews, // Use the base64 previews
+        completionRemark: completionRemark
+      });
 
-          // Remove completed job from list immediately
-          const updatedJobs = jobs.filter(j => j.id !== selectedJob.id);
-          setJobs(updatedJobs);
+      // Remove completed job from list immediately
+      const updatedJobs = jobs.filter(j => j.id !== selectedJob.id);
+      setJobs(updatedJobs);
 
-          // Update stats
-          setStats(prev => ({
-            ...prev,
-            completed: prev.completed + 1,
-            pending: prev.pending - (selectedJob.status === 'Pending' ? 1 : 0)
-          }));
+      // Update stats
+      setStats(prev => ({
+        ...prev,
+        completed: prev.completed + 1,
+        pending: prev.pending - (selectedJob.status === 'Pending' ? 1 : 0)
+      }));
 
-          toast({
-            title: "Job Completed Successfully!",
-            description: selectedJob.amcInfo
-              ? `AMC service count updated. Remaining: ${selectedJob.amcInfo.servicesRemaining - 1}/${selectedJob.amcInfo.servicesTotal}`
-              : "Job marked as completed",
-            status: "success",
-            duration: 5000
-          });
+      toast({
+        title: "Job Completed Successfully!",
+        description: selectedJob.amcInfo
+          ? `AMC service count updated. Remaining: ${selectedJob.amcInfo.servicesRemaining - 1}/${selectedJob.amcInfo.servicesTotal}`
+          : "Job marked as completed",
+        status: "success",
+        duration: 5000
+      });
 
-          onCompleteClose();
+      onCompleteClose();
 
-          // Refresh data after 2 seconds to sync with server
-          setTimeout(() => {
-            fetchAssignedJobs(false);
-          }, 2000);
-        } catch (error) {
-          console.error('Error completing job:', error);
-          toast({ title: "Failed to complete job", status: "error", duration: 3000 });
-        } finally {
-          setIsSubmitting(false);
-        }
-      };
+      // Refresh data after 2 seconds to sync with server
+      setTimeout(() => {
+        fetchAssignedJobs(false);
+      }, 2000);
     } catch (error) {
-      console.error('Error reading file:', error);
-      toast({ title: "Failed to process image", status: "error", duration: 3000 });
+      console.error('Error completing job:', error);
+      toast({ title: "Failed to complete job", status: "error", duration: 3000 });
       setIsSubmitting(false);
     }
   };
@@ -1088,42 +1092,78 @@ const AssignedJobs = () => {
                   onChange={handlePhotoChange}
                   display="none"
                   id="photo-upload"
+                  multiple
                 />
-                <Button
-                  as="label"
-                  htmlFor="photo-upload"
-                  w="full"
-                  h="40"
-                  borderRadius="2xl"
-                  border="2px dashed"
-                  borderColor="slate.200"
-                  bg="slate.50"
-                  cursor="pointer"
-                  _hover={{ bg: "slate.100", borderColor: "brand.300" }}
-                >
-                  {photoPreview ? (
-                    <Box w="full" h="full" p={2}>
-                      <img src={photoPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '12px' }} />
-                    </Box>
+                <Box>
+                  {photoPreviews.length > 0 ? (
+                    <SimpleGrid columns={3} spacing={2}>
+                      {photoPreviews.map((preview, index) => (
+                        <Box key={index} position="relative" h="24" borderRadius="lg" overflow="hidden" border="1px solid" borderColor="slate.200">
+                          <img src={preview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          <IconButton
+                            icon={<FaTrash />}
+                            size="xs"
+                            colorScheme="red"
+                            position="absolute"
+                            top="1"
+                            right="1"
+                            onClick={() => removePhoto(index)}
+                            aria-label="Remove Photo"
+                          />
+                        </Box>
+                      ))}
+                      <Button
+                        as="label"
+                        htmlFor="photo-upload"
+                        h="24"
+                        borderRadius="lg"
+                        border="2px dashed"
+                        borderColor="slate.200"
+                        bg="slate.50"
+                        cursor="pointer"
+                        _hover={{ bg: "slate.100", borderColor: "brand.300" }}
+                      >
+                        <VStack spacing={1}>
+                          <Icon as={FaPlus} fontSize="sm" color="slate.400" />
+                          <Text fontSize="10px" fontWeight="bold" color="slate.500">Add More</Text>
+                        </VStack>
+                      </Button>
+                    </SimpleGrid>
                   ) : (
-                    <VStack spacing={2}>
-                      <Icon as={FaCamera} fontSize="2xl" color="slate.400" />
-                      <Text fontSize="sm" fontWeight="bold" color="slate.500">Click to upload photo</Text>
-                    </VStack>
+                    <Button
+                      as="label"
+                      htmlFor="photo-upload"
+                      w="full"
+                      h="40"
+                      borderRadius="2xl"
+                      border="2px dashed"
+                      borderColor="slate.200"
+                      bg="slate.50"
+                      cursor="pointer"
+                      _hover={{ bg: "slate.100", borderColor: "brand.300" }}
+                    >
+                      <VStack spacing={2}>
+                        <Icon as={FaCamera} fontSize="2xl" color="slate.400" />
+                        <Text fontSize="sm" fontWeight="bold" color="slate.500">Click to upload photos</Text>
+                      </VStack>
+                    </Button>
                   )}
-                </Button>
+                </Box>
               </FormControl>
 
-              {photoPreview && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  colorScheme="red"
-                  onClick={() => { setCompletionPhoto(null); setPhotoPreview(null); }}
-                >
-                  Remove Photo
-                </Button>
-              )}
+              <FormControl>
+                <FormLabel fontSize="sm" fontWeight="black" color="slate.700">Completion Remarks / Description</FormLabel>
+                <Textarea
+                  placeholder="Enter any notes or remarks about the completion..."
+                  value={completionRemark}
+                  onChange={(e) => setCompletionRemark(e.target.value)}
+                  borderRadius="xl"
+                  bg="slate.50"
+                  border="1px solid"
+                  borderColor="slate.200"
+                  _focus={{ bg: "white", borderColor: "brand.300" }}
+                />
+              </FormControl>
             </VStack>
           </ModalBody>
           <ModalFooter borderTop="1px solid" borderColor="slate.50" py={5} px={8}>

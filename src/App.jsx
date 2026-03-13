@@ -18,6 +18,7 @@ const Reports = lazy(() => import("./pages/Reports"));
 const ChangePassword = lazy(() => import("./pages/ChangePassword"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const ServiceRequests = lazy(() => import("./pages/ServiceRequests"));
+const SMSCenter = lazy(() => import("./pages/SMSCenter"));
 
 const LoadingSpinner = () => (
   <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -38,49 +39,52 @@ function App() {
       <Toaster position="top-right" richColors closeButton />
       <Routes>
         {/* Public Routes */}
-        <Route 
-          path="/login" 
-          element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <Login />} 
+        <Route
+          path="/login"
+          element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <Login />}
         />
 
         {/* Protected Routes */}
         {isLoggedIn ? (
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={
-               <Suspense fallback={<LoadingSpinner />}><Dashboard /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><Dashboard /></Suspense>
             } />
             <Route path="/complain-tickets" element={
-               <Suspense fallback={<LoadingSpinner />}><ComplainTickets /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><ComplainTickets /></Suspense>
             } />
             <Route path="/ticket-types" element={
-               <Suspense fallback={<LoadingSpinner />}><TicketTypes /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><TicketTypes /></Suspense>
             } />
             <Route path="/assigned-jobs" element={
-               <Suspense fallback={<LoadingSpinner />}><AssignedJobs /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><AssignedJobs /></Suspense>
             } />
             <Route path="/new-lead" element={
-               <Suspense fallback={<LoadingSpinner />}><NewLead /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><NewLead /></Suspense>
             } />
             <Route path="/my-assets" element={
-               <Suspense fallback={<LoadingSpinner />}><MyAssets /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><MyAssets /></Suspense>
             } />
             <Route path="/assets-history" element={
-               <Suspense fallback={<LoadingSpinner />}><AssetsHistory /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><AssetsHistory /></Suspense>
             } />
             <Route path="/profile" element={
-               <Suspense fallback={<LoadingSpinner />}><Profile /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><Profile /></Suspense>
             } />
             <Route path="/reports" element={
-               <Suspense fallback={<LoadingSpinner />}><Reports /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><Reports /></Suspense>
             } />
             <Route path="/change-password" element={
-               <Suspense fallback={<LoadingSpinner />}><ChangePassword /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><ChangePassword /></Suspense>
             } />
             <Route path="/notifications" element={
-               <Suspense fallback={<LoadingSpinner />}><Notifications /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><Notifications /></Suspense>
             } />
             <Route path="/service-requests" element={
-               <Suspense fallback={<LoadingSpinner />}><ServiceRequests /></Suspense>
+              <Suspense fallback={<LoadingSpinner />}><ServiceRequests /></Suspense>
+            } />
+            <Route path="/sms-center" element={
+              <Suspense fallback={<LoadingSpinner />}><SMSCenter /></Suspense>
             } />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>

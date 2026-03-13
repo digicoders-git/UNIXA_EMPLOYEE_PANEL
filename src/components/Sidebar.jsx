@@ -1,32 +1,33 @@
-import { 
-  Box, 
-  Flex, 
-  Text, 
-  VStack, 
-  HStack, 
-  Icon, 
-  IconButton, 
-  Button, 
-  Avatar, 
+import {
+  Box,
+  Flex,
+  Text,
+  VStack,
+  HStack,
+  Icon,
+  IconButton,
+  Button,
+  Avatar,
   Spacer,
   Tooltip,
   Center
 } from "@chakra-ui/react";
 import { NavLink, useLocation } from "react-router-dom";
-import { 
-  FaTimes, 
-  FaTachometerAlt, 
-  FaTicketAlt, 
-  FaClipboardList, 
-  FaTools, 
-  FaUserPlus, 
-  FaChartBar, 
-  FaUserCircle, 
-  FaKey, 
+import {
+  FaTimes,
+  FaTachometerAlt,
+  FaTicketAlt,
+  FaClipboardList,
+  FaTools,
+  FaUserPlus,
+  FaChartBar,
+  FaUserCircle,
+  FaKey,
   FaSignOutAlt,
   FaChevronRight,
   FaTags,
-  FaBox
+  FaBox,
+  FaCommentDots
 } from "react-icons/fa";
 
 const SidebarItem = ({ to, icon, label, onClick }) => {
@@ -52,11 +53,11 @@ const SidebarItem = ({ to, icon, label, onClick }) => {
       >
         <Icon as={icon} fontSize="lg" />
         <Text fontSize="sm" fontWeight="semibold" flex={1}>{label}</Text>
-        <Icon 
-          as={FaChevronRight} 
-          fontSize="xs" 
-          opacity={isActive ? 1 : 0} 
-          _groupHover={{ opacity: isActive ? 1 : 0.5 }} 
+        <Icon
+          as={FaChevronRight}
+          fontSize="xs"
+          opacity={isActive ? 1 : 0}
+          _groupHover={{ opacity: isActive ? 1 : 0.5 }}
           transition="opacity 0.2s"
         />
       </HStack>
@@ -73,6 +74,7 @@ const Sidebar = ({ isOpen, onClose, onLogout }) => {
     { to: "/new-lead", icon: FaUserPlus, label: "New Lead" },
     { to: "/my-assets", icon: FaBox, label: "My Assets" },
     { to: "/reports", icon: FaChartBar, label: "Reports" },
+    { to: "/sms-center", icon: FaCommentDots, label: "SMS Center" },
     { to: "/profile", icon: FaUserCircle, label: "Profile" },
     { to: "/change-password", icon: FaKey, label: "Change Password" },
   ];
@@ -97,29 +99,34 @@ const Sidebar = ({ isOpen, onClose, onLogout }) => {
     >
       {/* Sidebar Header */}
       <Flex h="20" px={9} align="center" justify="flex-start" borderBottom="1px solid" borderColor="slate.100">
-        <VStack spacing={0} align="start">
-          <Text 
-            fontSize="28px" 
-            fontWeight="900" 
-            color="brand.500" 
-            letterSpacing="-0.04em"
-            lineHeight="0.9"
-            fontFamily="'Source Sans 3', sans-serif"
-          >
-            UNIXA
-          </Text>
-          <Text 
-            fontSize="10px" 
-            fontWeight="900" 
-            color="accent.500" 
-            letterSpacing="0.4em"
-            textTransform="uppercase"
-            fontFamily="'Source Sans 3', sans-serif"
-            mt={1}
-          >
-            EMPLOYEE PANEL
-          </Text>
-        </VStack>
+        <HStack spacing={3}>
+          <Box>
+            <img src="/sks-logo.png" alt="UNIXA Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+          </Box>
+          <VStack spacing={0} align="start">
+            <Text
+              fontSize="28px"
+              fontWeight="900"
+              color="brand.500"
+              letterSpacing="-0.04em"
+              lineHeight="0.9"
+              fontFamily="'Source Sans 3', sans-serif"
+            >
+              UNIXA
+            </Text>
+            <Text
+              fontSize="10px"
+              fontWeight="900"
+              color="accent.500"
+              letterSpacing="0.4em"
+              textTransform="uppercase"
+              fontFamily="'Source Sans 3', sans-serif"
+              mt={1}
+            >
+              OUR PARTNERS
+            </Text>
+          </VStack>
+        </HStack>
         <IconButton
           display={{ base: "flex", lg: "none" }}
           variant="ghost"
@@ -172,7 +179,7 @@ const Sidebar = ({ isOpen, onClose, onLogout }) => {
           onClick={onLogout}
           sx={{
             '&:hover svg': {
-                transform: 'rotate(12deg)'
+              transform: 'rotate(12deg)'
             }
           }}
         >

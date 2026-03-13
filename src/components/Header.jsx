@@ -114,6 +114,8 @@ const Header = ({ onToggleSidebar, user }) => {
           </VStack>
           <Avatar 
             size="sm" 
+            name={user?.name || "Employee"}
+            src={user?.profilePicture}
             icon={<FaUserCircle fontSize="1.5rem" />} 
             bg="slate.50" 
             color="slate.400"
