@@ -98,22 +98,12 @@ const Sidebar = ({ isOpen, onClose, onLogout }) => {
       boxShadow={{ base: "2xl", lg: "none" }}
     >
       {/* Sidebar Header */}
-      <Flex h="20" px={9} align="center" justify="flex-start" borderBottom="1px solid" borderColor="slate.100">
-        <HStack spacing={3}>
-          <Box>
-            <img src="/sks-logo.png" alt="UNIXA Logo" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
-          </Box>
-          <VStack spacing={0} align="start">
-            <Text
-              fontSize="28px"
-              fontWeight="900"
-              color="brand.500"
-              letterSpacing="-0.04em"
-              lineHeight="0.9"
-              fontFamily="'Source Sans 3', sans-serif"
-            >
-              UNIXA
-            </Text>
+      <Flex h="36" px={9} align="center" justify="center" borderBottom="1px solid" borderColor="slate.100">
+        <HStack spacing={3} justify="center">
+        <VStack spacing={1} align="center">
+            <Box>
+              <img src="/favicon.png" alt="UNIXA Logo" style={{ width: '112px', height: '112px', objectFit: 'contain' }} />
+            </Box>
             <Text
               fontSize="10px"
               fontWeight="900"
@@ -121,9 +111,8 @@ const Sidebar = ({ isOpen, onClose, onLogout }) => {
               letterSpacing="0.4em"
               textTransform="uppercase"
               fontFamily="'Source Sans 3', sans-serif"
-              mt={1}
             >
-              OUR PARTNERS
+              Employee Panel
             </Text>
           </VStack>
         </HStack>
