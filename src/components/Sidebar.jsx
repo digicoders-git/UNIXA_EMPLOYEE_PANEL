@@ -68,8 +68,8 @@ const SidebarItem = ({ to, icon, label, onClick }) => {
 const Sidebar = ({ isOpen, onClose, onLogout }) => {
   const menuItems = [
     { to: "/dashboard", icon: FaTachometerAlt, label: "Dashboard" },
-    { to: "/complain-tickets", icon: FaTicketAlt, label: "Complain Tickets" },
-    { to: "/ticket-types", icon: FaTags, label: "Ticket Types" },
+    // { to: "/complain-tickets", icon: FaTicketAlt, label: "Complain Tickets" },
+    // { to: "/ticket-types", icon: FaTags, label: "Ticket Types" },
     { to: "/assigned-jobs", icon: FaClipboardList, label: "Assigned Jobs" },
     { to: "/new-lead", icon: FaUserPlus, label: "New Lead" },
     { to: "/my-assets", icon: FaBox, label: "My Assets" },

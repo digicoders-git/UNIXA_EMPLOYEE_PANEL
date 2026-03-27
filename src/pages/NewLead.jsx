@@ -100,6 +100,7 @@ const NewLead = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [catalogData, setCatalogData] = useState({ products: [], parts: [], rentPlans: [], amcPlans: [] });
 
   const [formData, setFormData] = useState({
     id: null,
@@ -108,12 +109,15 @@ const NewLead = () => {
     email: "",
     address: "",
     productInterest: "",
+    selectedItem: "",
     source: "Field Visit",
     notes: "",
     leadStatus: "Warm",
     followUpDate: ""
   });
   
+  const [productFilter, setProductFilter] = useState("All");
+  const [dateFilter, setDateFilter] = useState("this_month");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
   const [modalMode, setModalMode] = useState("create"); // 'create' | 'edit'
@@ -124,7 +128,27 @@ const NewLead = () => {
 
   useEffect(() => {
     fetchLeads();
+    fetchCatalog();
   }, []);
+
+  const fetchCatalog = async () => {
+    try {
+      const [products, parts, rentPlans, amcPlans] = await Promise.all([
+        api.get('/products'),
+        api.get('/ro-parts'),
+        api.get('/rental-plans'),
+        api.get('/amc-plans'),
+      ]);
+      setCatalogData({
+        products: products.data?.products || products.data || [],
+        parts: parts.data?.roParts || parts.data || [],
+        rentPlans: rentPlans.data?.plans || rentPlans.data || [],
+        amcPlans: amcPlans.data?.plans || amcPlans.data || [],
+      });
+    } catch (err) {
+      console.error('Catalog fetch error:', err);
+    }
+  };
 
   const fetchLeads = async () => {
     try {
@@ -155,11 +179,37 @@ const NewLead = () => {
     }
   };
 
+  const DATE_FILTERS = [
+    { key: "this_month", label: "This Month" },
+    { key: "last_month", label: "Last Month" },
+    { key: "last_3_months", label: "Last 3 Months" },
+  ];
+
+  const getDateRange = (filter) => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    if (filter === "this_month") return { from: new Date(y, m, 1), to: now };
+    if (filter === "last_month") return { from: new Date(y, m - 1, 1), to: new Date(y, m, 0, 23, 59, 59) };
+    return { from: new Date(y, m - 2, 1), to: now };
+  };
+
+  const productCategories = ["All", "Product", "Part", "Rent", "AMC", "Water Testing", "Installation", "Service Paid Type", "Others", "Demo"];
+
+  const { from: dateFrom, to: dateTo } = getDateRange(dateFilter);
+  const dateFilteredLeads = leads.filter(l => {
+    const d = new Date(l.date);
+    return d >= dateFrom && d <= dateTo;
+  });
+  const filteredByProduct = productFilter === "All" ? dateFilteredLeads : dateFilteredLeads.filter(l => (l.product || 'General Inquiry') === productFilter);
+  const statsTotal = filteredByProduct.length;
+  const statsCompleted = filteredByProduct.filter(l => l.status === 'Completed').length;
+  const statsPending = filteredByProduct.filter(l => l.status !== 'Completed').length;
+
   // Pagination Logic
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = leads.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(leads.length / itemsPerPage);
+  const currentItems = filteredByProduct.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredByProduct.length / itemsPerPage);
 
   const handleOpenCreate = () => {
       setModalMode("create");
@@ -170,6 +220,7 @@ const NewLead = () => {
         email: "",
         address: "",
         productInterest: "",
+        selectedItem: "",
         source: "Field Visit",
         notes: "",
         leadStatus: "Warm",
@@ -233,6 +284,7 @@ const NewLead = () => {
           email: formData.email,
           address: formData.address,
           productInterest: formData.productInterest,
+          selectedItem: formData.selectedItem || undefined,
           source: formData.source,
           notes: formData.notes,
           leadStatus: formData.leadStatus,
@@ -276,8 +328,28 @@ const NewLead = () => {
             <Text color="slate.500" fontSize="sm">Track and manage your field leads</Text>
           </Flex>
 
-          <Button 
-            onClick={handleOpenCreate}
+          <HStack spacing={3}>
+            {/* Date Filter Dropdown */}
+            <Select
+              size="sm"
+              borderRadius="xl"
+              fontWeight="bold"
+              fontSize="xs"
+              bg="white"
+              border="1px solid"
+              borderColor="slate.200"
+              w="36"
+              value={dateFilter}
+              onChange={(e) => { setDateFilter(e.target.value); setCurrentPage(1); }}
+              _focus={{ borderColor: "brand.300" }}
+            >
+              {DATE_FILTERS.map(f => (
+                <option key={f.key} value={f.key}>{f.label}</option>
+              ))}
+            </Select>
+
+            <Button 
+              onClick={handleOpenCreate}
             colorScheme="brand" 
             px={8} 
             h="12"
@@ -287,10 +359,49 @@ const NewLead = () => {
             fontSize="sm"
             fontWeight="bold"
             _active={{ transform: "scale(0.95)" }}
-          >
-            Add New Lead
-          </Button>
+            >
+              Add New Lead
+            </Button>
+          </HStack>
         </Flex>
+
+        {/* Date Range Filter */}
+
+          {/* Product Filter + Stats */}
+        <Box>
+          <HStack mb={4} spacing={2} flexWrap="wrap">
+            {productCategories.map(cat => (
+              <Button
+                key={cat}
+                size="sm"
+                borderRadius="xl"
+                fontSize="xs"
+                fontWeight="bold"
+                variant={productFilter === cat ? "solid" : "outline"}
+                colorScheme={productFilter === cat ? "brand" : "gray"}
+                onClick={() => { setProductFilter(cat); setCurrentPage(1); }}
+              >
+                {cat}
+              </Button>
+            ))}
+          </HStack>
+
+          <SimpleGrid columns={3} spacing={4}>
+              <Box bg="white" border="1px solid" borderColor="slate.100" borderRadius="2xl" p={4} textAlign="center">
+                <Text fontSize="2xl" fontWeight="black" color="slate.700">{statsTotal}</Text>
+                <Text fontSize="xs" fontWeight="bold" color="slate.400" textTransform="uppercase">Total Leads</Text>
+              </Box>
+              <Box bg="white" border="1px solid" borderColor="green.100" borderRadius="2xl" p={4} textAlign="center">
+                <Text fontSize="2xl" fontWeight="black" color="green.500">{statsCompleted}</Text>
+                <Text fontSize="xs" fontWeight="bold" color="green.400" textTransform="uppercase">Completed</Text>
+              </Box>
+              <Box bg="white" border="1px solid" borderColor="orange.100" borderRadius="2xl" p={4} textAlign="center">
+                <Text fontSize="2xl" fontWeight="black" color="orange.500">{statsPending}</Text>
+                <Text fontSize="xs" fontWeight="bold" color="orange.400" textTransform="uppercase">Pending</Text>
+              </Box>
+            </SimpleGrid>
+
+        </Box>
 
         {/* Leads Table */}
         <Box 
@@ -411,7 +522,7 @@ const NewLead = () => {
             {leads.length > 0 && (
                 <Flex px={8} py={5} justify="space-between" align="center" borderTop="1px solid" borderColor="slate.50" bg="slate.50/30">
                     <Text fontSize="xs" fontWeight="bold" color="slate.500">
-                        Showing <Text as="span" color="slate.800">{indexOfFirstItem + 1}-{Math.min(indexOfLastItem, leads.length)}</Text> of {leads.length}
+                        Showing <Text as="span" color="slate.800">{indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredByProduct.length)}</Text> of {filteredByProduct.length}
                     </Text>
                     <HStack spacing={2}>
                         <Button 
@@ -521,16 +632,61 @@ const NewLead = () => {
                             fontSize="sm"
                             fontWeight="semibold"
                             value={formData.productInterest}
-                            onChange={(e) => setFormData({...formData, productInterest: e.target.value})}
+                            onChange={(e) => setFormData({...formData, productInterest: e.target.value, selectedItem: ""})}
                             placeholder="Select product category"
                             >
-                            <option value="RO System">RO System</option>
-                            <option value="Water Softener">Water Softener</option>
-                            <option value="Annual Maintenance">Annual Maintenance (AMC)</option>
-                            <option value="Repair Parts">Repair Spare Parts</option>
+                            <option value="Product">Product</option>
+                            <option value="Part">Part</option>
+                            <option value="Rent">Rent</option>
+                            <option value="AMC">AMC</option>
+                            <option value="Water Testing">Water Testing</option>
+                            <option value="Installation">Installation</option>
+                            <option value="Service Paid Type">Service Paid Type</option>
+                            <option value="Others">Others</option>
+                            <option value="Demo">Demo</option>
                             </Select>
                         </InputGroup>
                         </FormControl>
+
+                        {/* Dynamic item selector for Product/Part/Rent/AMC */}
+                        {["Product", "Part", "Rent", "AMC"].includes(formData.productInterest) && (() => {
+                          const optionMap = {
+                            Product: catalogData.products.map(p => ({ value: p._id, label: p.name })),
+                            Part: catalogData.parts.map(p => ({ value: p._id, label: p.name })),
+                            Rent: catalogData.rentPlans.map(p => ({ value: p._id, label: p.planName || p.name })),
+                            AMC: catalogData.amcPlans.map(p => ({ value: p._id, label: p.planName || p.name })),
+                          };
+                          const options = optionMap[formData.productInterest] || [];
+                          return (
+                            <FormControl isRequired>
+                              <FormLabel fontSize="sm" fontWeight="black" color="slate.700" ml={1}>
+                                Select {formData.productInterest}
+                              </FormLabel>
+                              <InputGroup size="lg">
+                                <InputLeftElement pointerEvents="none">
+                                  <Icon as={FaList} color="slate.300" />
+                                </InputLeftElement>
+                                <Select
+                                  pl="12"
+                                  bg="slate.50"
+                                  border="1px solid"
+                                  borderColor="slate.100"
+                                  borderRadius="2xl"
+                                  _focus={{ bg: "white", borderColor: "brand.300", boxShadow: "lg" }}
+                                  fontSize="sm"
+                                  fontWeight="semibold"
+                                  value={formData.selectedItem}
+                                  onChange={(e) => setFormData({...formData, selectedItem: e.target.value})}
+                                  placeholder={`Choose a ${formData.productInterest}`}
+                                >
+                                  {options.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </Select>
+                              </InputGroup>
+                            </FormControl>
+                          );
+                        })()}
                         
                         <InputField 
                         label="Location / Area" 

@@ -77,6 +77,8 @@ const AssignedJobs = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, completed: 0, pending: 0 });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [ticketTypeFilter, setTicketTypeFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("this_month");
   const abortControllerRef = useRef(null);
 
   const { isOpen: isViewOpen, onOpen: onViewOpen, onClose: onViewClose } = useDisclosure();
@@ -170,23 +172,17 @@ const AssignedJobs = () => {
         } else {
           console.warn('[WARNING] ⚠️ No tickets returned from API - Array is empty!');
         }
-        const jobs = [];
         let totalCount = 0;
         let completedCount = 0;
         let pendingCount = 0;
+        const allJobs = [];
 
         assignedTickets.forEach((ticket) => {
           totalCount++;
+          if (ticket.status === 'Completed') completedCount++;
+          else if (ticket.status === 'Pending') pendingCount++;
 
-          if (ticket.status === 'Completed') {
-            completedCount++;
-            return; // Skip completed jobs
-          }
-
-          if (ticket.status === 'Pending') pendingCount++;
-
-          // Minimal data processing for speed
-          jobs.push({
+          allJobs.push({
             id: ticket._id,
             ticketNumber: ticket._id.slice(-8).toUpperCase(),
             title: ticket.title || 'Service Task',
@@ -202,12 +198,15 @@ const AssignedJobs = () => {
             customerEmail: ticket.customerEmail || 'N/A',
             address: ticket.address || 'N/A',
             notes: ticket.notes || ticket.description || 'No notes',
-            amcInfo: null // AMC info removed for speed
+            ticketType: ticket.ticketType || 'service_request',
+            visitType: ticket.visitType || 'SERVICE_REQUEST',
+            rawDate: ticket.createdAt || ticket.dueDate,
+            amcInfo: null
           });
         });
 
-        // Update state immediately
-        setJobs(jobs);
+        // jobs array mein SABHI tickets rakho (completed bhi) — sirf cards se filter hoga
+        setJobs(allJobs);
         const newStats = {
           total: totalCount,
           completed: completedCount,
@@ -223,7 +222,7 @@ const AssignedJobs = () => {
         // Cache successful data
         try {
           sessionStorage.setItem('cachedJobs', JSON.stringify({
-            jobs,
+            jobs: allJobs,
             stats: newStats,
             timestamp: Date.now()
           }));
@@ -326,10 +325,67 @@ const AssignedJobs = () => {
     }
   };
 
+  const DATE_FILTERS = [
+    { key: "this_month", label: "This Month" },
+    { key: "last_month", label: "Last Month" },
+    { key: "last_3_months", label: "Last 3 Months" },
+  ];
+
+  const getDateRange = (filter) => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    if (filter === "this_month") return { from: new Date(y, m, 1), to: now };
+    if (filter === "last_month") return { from: new Date(y, m - 1, 1), to: new Date(y, m, 0, 23, 59, 59) };
+    return { from: new Date(y, m - 2, 1), to: now }; // last 3 months
+  };
+
+  const TICKET_TYPES = [
+    { key: "all", label: "All Tickets" },
+    { key: "complaint", label: "Complaint" },
+    { key: "amc", label: "AMC Service" },
+    { key: "installation", label: "Installation" },
+    { key: "lead", label: "Lead" },
+  ];
+
+  const normalizeType = (job) => {
+    if (job.visitType === 'AMC_REMINDER') return 'amc';
+    if (job.ticketType === 'order') return 'installation';
+    if (job.ticketType === 'lead') return 'lead';
+    return 'complaint';
+  };
+
+  const { from: dateFrom, to: dateTo } = getDateRange(dateFilter);
+  // Completed jobs stats ke liye jobs mein hain, lekin cards mein nahi dikhenge
+  const dateFilteredJobs = jobs.filter(j => {
+    const d = new Date(j.rawDate || j.dueDate);
+    return d >= dateFrom && d <= dateTo && j.status !== 'Completed';
+  });
+
+  const filteredJobs = ticketTypeFilter === 'all'
+    ? dateFilteredJobs
+    : dateFilteredJobs.filter(j => normalizeType(j) === ticketTypeFilter);
+
+  const typeStats = TICKET_TYPES.slice(1).reduce((acc, t) => {
+    const typeJobs = jobs.filter(j => {
+      const d = new Date(j.rawDate || j.dueDate);
+      return d >= dateFrom && d <= dateTo && normalizeType(j) === t.key;
+    });
+    acc[t.key] = {
+      total: typeJobs.length,
+      completed: typeJobs.filter(j => j.status === 'Completed').length,
+      pending: typeJobs.filter(j => j.status === 'Pending').length,
+    };
+    return acc;
+  }, {});
+
+  const activeStats = ticketTypeFilter === 'all'
+    ? stats  // global stats use karo jo server se aaye hain
+    : typeStats[ticketTypeFilter] || { total: 0, completed: 0, pending: 0 };
+
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = jobs.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(jobs.length / itemsPerPage);
+  const currentItems = filteredJobs.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredJobs.length / itemsPerPage);
 
   const handleOpenView = (job) => {
     setSelectedJob(job);
@@ -404,20 +460,24 @@ const AssignedJobs = () => {
       // Here we're using base64 for simplicity as the current code does
       
       await api.put(`/assigned-tickets/${selectedJob.id}/complete`, {
-        completionPhotos: photoPreviews, // Use the base64 previews
+        completionPhotos: photoPreviews,
         completionRemark: completionRemark
       });
 
-      // Remove completed job from list immediately
-      const updatedJobs = jobs.filter(j => j.id !== selectedJob.id);
-      setJobs(updatedJobs);
+      // Job ka status Completed karo — remove mat karo, stats sahi rahenge
+      setJobs(prev => prev.map(j =>
+        j.id === selectedJob.id ? { ...j, status: 'Completed' } : j
+      ));
 
-      // Update stats
+      // Stats update karo
       setStats(prev => ({
-        ...prev,
+        total: prev.total,
         completed: prev.completed + 1,
         pending: prev.pending - (selectedJob.status === 'Pending' ? 1 : 0)
       }));
+
+      // Cache invalidate karo
+      sessionStorage.removeItem('cachedJobs');
 
       toast({
         title: "Job Completed Successfully!",
@@ -430,10 +490,8 @@ const AssignedJobs = () => {
 
       onCompleteClose();
 
-      // Refresh data after 2 seconds to sync with server
-      setTimeout(() => {
-        fetchAssignedJobs(false);
-      }, 2000);
+      // Background mein fresh data sync karo
+      setTimeout(() => fetchAssignedJobs(false), 2000);
     } catch (error) {
       console.error('Error completing job:', error);
       toast({ title: "Failed to complete job", status: "error", duration: 3000 });
@@ -448,19 +506,19 @@ const AssignedJobs = () => {
         <Box bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="slate.100" boxShadow="sm">
           <VStack align="start" spacing={1}>
             <Text fontSize="xs" fontWeight="bold" color="slate.400" textTransform="uppercase">Total Jobs</Text>
-            <Heading size="2xl" color="slate.800">{stats.total}</Heading>
+            <Heading size="2xl" color="slate.800">{activeStats.total}</Heading>
           </VStack>
         </Box>
         <Box bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="green.100" boxShadow="sm">
           <VStack align="start" spacing={1}>
             <Text fontSize="xs" fontWeight="bold" color="green.500" textTransform="uppercase">Completed</Text>
-            <Heading size="2xl" color="green.600">{stats.completed}</Heading>
+            <Heading size="2xl" color="green.600">{activeStats.completed}</Heading>
           </VStack>
         </Box>
         <Box bg="white" p={6} borderRadius="2xl" border="1px solid" borderColor="orange.100" boxShadow="sm">
           <VStack align="start" spacing={1}>
             <Text fontSize="xs" fontWeight="bold" color="orange.500" textTransform="uppercase">Pending</Text>
-            <Heading size="2xl" color="orange.600">{stats.pending}</Heading>
+            <Heading size="2xl" color="orange.600">{activeStats.pending}</Heading>
           </VStack>
         </Box>
       </SimpleGrid>
@@ -471,6 +529,44 @@ const AssignedJobs = () => {
           <Text color="slate.500" fontSize="sm">Scheduled visits and service calls for today</Text>
         </VStack>
         <HStack spacing={4}>
+          {/* Date Filter Dropdown */}
+          <Select
+            size="sm"
+            borderRadius="xl"
+            fontWeight="bold"
+            fontSize="xs"
+            bg="white"
+            border="1px solid"
+            borderColor="slate.200"
+            w="36"
+            value={dateFilter}
+            onChange={(e) => { setDateFilter(e.target.value); setCurrentPage(1); }}
+            _focus={{ borderColor: "brand.300" }}
+          >
+            {DATE_FILTERS.map(f => (
+              <option key={f.key} value={f.key}>{f.label}</option>
+            ))}
+          </Select>
+
+          {/* Ticket Type Filter Dropdown */}
+          <Select
+            size="sm"
+            borderRadius="xl"
+            fontWeight="bold"
+            fontSize="xs"
+            bg="white"
+            border="1px solid"
+            borderColor="slate.200"
+            w="40"
+            value={ticketTypeFilter}
+            onChange={(e) => { setTicketTypeFilter(e.target.value); setCurrentPage(1); }}
+            _focus={{ borderColor: "brand.300" }}
+          >
+            {TICKET_TYPES.map(t => (
+              <option key={t.key} value={t.key}>{t.label}</option>
+            ))}
+          </Select>
+
           {/* Simple / Advanced Toggle */}
           <HStack bg="white" p={1} borderRadius="lg" border="1px solid" borderColor="slate.100" spacing={1} display={{ base: "none", md: "flex" }}>
             <Text fontSize="xs" fontWeight="bold" color={showAdvanced ? "brand.500" : "slate.400"} px={3}>
@@ -549,19 +645,16 @@ const AssignedJobs = () => {
               <Text fontSize="xs" color="slate.300">If this takes too long, check your connection</Text>
             </VStack>
           </Center>
-        ) : jobs.length === 0 ? (
+        ) : filteredJobs.length === 0 ? (
           <Center py={20}>
             <VStack>
-              <Text fontSize="lg" fontWeight="bold" color="slate.400">No active jobs assigned</Text>
-              <Text fontSize="sm" color="slate.400">Check back later for new assignments</Text>
-              <Button size="sm" colorScheme="blue" variant="outline" onClick={() => fetchAssignedJobs(true)} mt={3}>
-                Refresh Jobs
-              </Button>
+              <Text fontSize="lg" fontWeight="bold" color="slate.400">No jobs found for this type</Text>
+              <Text fontSize="sm" color="slate.400">Try selecting a different filter</Text>
             </VStack>
           </Center>
         ) : (
           <SimpleGrid columns={{ base: 1, lg: 2 }} spacing={6}>
-            {jobs.map((job) => (
+            {filteredJobs.map((job) => (
               <Box
                 key={job.id}
                 bg="white"
@@ -777,14 +870,11 @@ const AssignedJobs = () => {
                 <Text fontSize="xs" color="slate.300">If this takes too long, check your connection</Text>
               </VStack>
             </Center>
-          ) : jobs.length === 0 ? (
+          ) : filteredJobs.length === 0 ? (
             <Center py={20}>
               <VStack>
-                <Text fontSize="lg" fontWeight="bold" color="slate.400">No active jobs assigned</Text>
-                <Text fontSize="sm" color="slate.400">Check back later for new assignments</Text>
-                <Button size="sm" colorScheme="blue" variant="outline" onClick={() => fetchAssignedJobs(true)} mt={3}>
-                  Refresh Jobs
-                </Button>
+                <Text fontSize="lg" fontWeight="bold" color="slate.400">No jobs found for this type</Text>
+                <Text fontSize="sm" color="slate.400">Try selecting a different filter</Text>
               </VStack>
             </Center>
           ) : (
@@ -907,10 +997,10 @@ const AssignedJobs = () => {
               </Box>
 
               {/* Pagination Footer */}
-              {jobs.length > itemsPerPage && (
+              {filteredJobs.length > itemsPerPage && (
                 <Flex px={8} py={5} justify="space-between" align="center" borderTop="1px solid" borderColor="slate.100" bg="slate.50">
                   <Text fontSize="xs" fontWeight="bold" color="slate.500">
-                    Showing <Text as="span" color="slate.800">{indexOfFirstItem + 1}-{Math.min(indexOfLastItem, jobs.length)}</Text> of {jobs.length}
+                    Showing <Text as="span" color="slate.800">{indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredJobs.length)}</Text> of {filteredJobs.length}
                   </Text>
                   <HStack spacing={2}>
                     <Button

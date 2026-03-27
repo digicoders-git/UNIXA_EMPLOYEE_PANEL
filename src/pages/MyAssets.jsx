@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
-  Box, VStack, Heading, Text, SimpleGrid, Badge, Button, Modal, ModalOverlay, ModalContent,
-  ModalHeader, ModalBody, ModalFooter, ModalCloseButton, useDisclosure, Select, Textarea,
+  Box, VStack, Heading, Text, SimpleGrid, Badge, Button,
   useToast, Spinner, Center, HStack, Icon, Flex
 } from "@chakra-ui/react";
 import { FaLaptop, FaCar, FaTools, FaPencilAlt, FaSimCard, FaTshirt, FaBox, FaHistory } from "react-icons/fa";
@@ -20,18 +19,12 @@ const assetIcons = {
 
 const MyAssets = () => {
   const [assets, setAssets] = useState([]);
-  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedAsset, setSelectedAsset] = useState(null);
-  const [newEmployeeId, setNewEmployeeId] = useState("");
-  const [remarks, setRemarks] = useState("");
-  const { isOpen, onOpen, onClose } = useDisclosure();
   const toast = useToast();
   const navigate = useNavigate();
 
   useEffect(() => {
     fetchMyAssets();
-    fetchEmployees();
   }, []);
 
   const fetchMyAssets = async () => {
@@ -51,36 +44,6 @@ const MyAssets = () => {
       toast({ title: "Error", description: error.response?.data?.message || "Failed to fetch assets", status: "error", duration: 3000 });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchEmployees = async () => {
-    try {
-      const { data } = await api.get("/employees");
-      setEmployees(data);
-    } catch (error) {
-      console.error("Failed to fetch employees", error);
-    }
-  };
-
-  const handleReassign = (asset) => {
-    setSelectedAsset(asset);
-    setNewEmployeeId("");
-    setRemarks("");
-    onOpen();
-  };
-
-  const submitReassign = async () => {
-    try {
-      await api.post(`/employee-assets/${selectedAsset._id}/reassign`, {
-        newEmployeeId: newEmployeeId || null,
-        remarks
-      });
-      toast({ title: "Success", description: newEmployeeId ? "Asset re-assigned successfully" : "Asset returned to admin", status: "success", duration: 3000 });
-      fetchMyAssets();
-      onClose();
-    } catch (error) {
-      toast({ title: "Error", description: error.response?.data?.message || "Failed to re-assign", status: "error", duration: 3000 });
     }
   };
 
@@ -118,45 +81,13 @@ const MyAssets = () => {
               <Text fontSize="sm" color="slate.500" mb={1}>Type: {asset.assetType}</Text>
               {asset.modelNumber && <Text fontSize="sm" color="slate.500" mb={3}>Model: {asset.modelNumber}</Text>}
               <HStack spacing={2} mt={4}>
-                <Button size="sm" colorScheme="blue" onClick={() => handleReassign(asset)} flex={1}>Re-assign</Button>
-                <Button size="sm" colorScheme="red" variant="outline" onClick={() => { setSelectedAsset(asset); setNewEmployeeId(""); setRemarks(""); onOpen(); }}>Return</Button>
+                <Badge colorScheme="green" px={3} py={1} borderRadius="lg" fontSize="sm">Assigned to You</Badge>
               </HStack>
             </Box>
           ))}
         </SimpleGrid>
       )}
 
-      <Modal isOpen={isOpen} onClose={onClose} size="lg">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Re-assign Asset</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <VStack spacing={4} align="stretch">
-              <Box>
-                <Text fontWeight="bold" mb={2}>Asset: {selectedAsset?.assetName}</Text>
-                <Text fontSize="sm" color="slate.500">ID: {selectedAsset?.uniqueId}</Text>
-              </Box>
-              <Box>
-                <Text fontWeight="bold" mb={2}>Re-assign to Employee (or leave empty to return to admin)</Text>
-                <Select placeholder="Select employee or leave empty for admin" value={newEmployeeId} onChange={(e) => setNewEmployeeId(e.target.value)}>
-                  {employees.map((emp) => (
-                    <option key={emp._id} value={emp._id}>{emp.name} - {emp.email}</option>
-                  ))}
-                </Select>
-              </Box>
-              <Box>
-                <Text fontWeight="bold" mb={2}>Remarks</Text>
-                <Textarea placeholder="Add remarks..." value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-              </Box>
-            </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onClose}>Cancel</Button>
-            <Button colorScheme="blue" onClick={submitReassign}>{newEmployeeId ? "Re-assign" : "Return to Admin"}</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
     </VStack>
   );
 };

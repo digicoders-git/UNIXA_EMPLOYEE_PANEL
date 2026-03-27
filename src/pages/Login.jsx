@@ -72,13 +72,13 @@ const Login = () => {
       >
         <VStack spacing={6} align="stretch">
           <Center mb={2}>
-            <VStack spacing={-2}>
-              <Text fontSize="5xl" fontWeight="900" color="brand.500" letterSpacing="-0.05em" lineHeight="1" fontFamily="'Source Sans 3', sans-serif">
-                UNIXA
-              </Text>
-              <Text fontSize="10px" fontWeight="900" color="accent.500" letterSpacing="0.6em" textTransform="uppercase">
-                EMPLOYEE
-              </Text>
+            <VStack spacing={4}>
+              <img src="/favicon.png" alt="logo" width="180px" height="180px">
+             
+              </img>
+              <p className='text-xl font-bold'>
+                Partner Panel
+              </p>
             </VStack>
           </Center>
 
